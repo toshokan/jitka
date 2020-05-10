@@ -15,21 +15,32 @@ impl Scheduler {
     }
     
     pub async fn schedule(&mut self, mut tasks: Vec<Hook>) -> Option<()> {
-	let mut stream = FuturesUnordered::new();
-	tasks.drain(..).for_each(|t| {
-	    stream.push(t.schedule())
-	});
-
-	while let Some(t) = stream.next().await {
-	    self.sink.send(
-		TaskOutput {
-		    tag: t.tag.clone(),
-		    separator: " <> ".to_string(),
-		    body: "aha!".to_string()
+	let streams = {
+	    let mut streams = vec![];
+	    for task in tasks {
+		if let Some(stream) = task.stream().await {
+		    streams.push(stream);
 		}
-	    ).await.ok()?;
-	    stream.push(t.schedule())
-	}
+	    }
+	    streams
+	};
+	let stream = streams
+	    .into_iter();
+	// let mut stream = FuturesUnordered::new();
+	// tasks.drain(..).for_each(|t| {
+	//     stream.push(t.schedule())
+	// });
+
+	// while let Some(t) = stream.next().await {
+	//     self.sink.send(
+	// 	TaskOutput {
+	// 	    tag: t.tag.clone(),
+	// 	    separator: " <> ".to_string(),
+	// 	    body: "aha!".to_string()
+	// 	}
+	//     ).await.ok()?;
+	//     stream.push(t.schedule())
+	// }
 	
 	Some(())
     }

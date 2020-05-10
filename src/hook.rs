@@ -11,6 +11,7 @@ pub struct Hook {
     pub separator: String
 }
 
+
 impl Hook {
     pub async fn schedule(self) -> Self {
 	use Kind::*;
@@ -24,24 +25,42 @@ impl Hook {
 	self
     }
 
-    // pub async fn execute() -> TaskOutput {
-    // 	unimplemented!();
-    // }
+    pub async fn be(&self) -> TaskOutput {
+	TaskOutput {
+	    tag: "be".to_string(),
+	    body: "be".to_string(),
+	    separator: "<>".to_string(),
+	}
+    }
 
-    // pub fn stream(self) -> impl stream::Stream<Item = TaskOutput> {
-    // 	use Kind::*;
-    // 	match &self.kind {
-    // 	    Interval {millis} => {
-    // 		let interval = Duration::from_millis(*millis);
-    // 		stream::unfold((), move |()| async {
-    // 		    task::sleep(interval).await;
-    // 		    let output = Self::execute().await;
-    // 		    Some((output, ()))
-    // 		})
-    // 	    },
-    // 	    _ => unimplemented!()
-    // 	}
-    // }
+    pub async fn stream(self) -> Option<Box<dyn stream::Stream<Item = TaskOutput>>> {
+    	use Kind::*;
+    	match &self.kind {
+    	    Interval {millis} => {
+		let interval = Duration::from_millis(*millis);
+    		let s = stream::unfold((self, interval), |(s, i)| async move {
+    		    task::sleep(i).await;
+    		    let output = s.be().await;
+    		    Some((output, (s, i)))
+    		});
+		Some(Box::new(s))
+    	    },
+	    Queue {path} => {
+		use async_std::prelude::*;
+	    	let file = async_std::fs::File::open(path).await.ok()?;
+		let reader = async_std::io::BufReader::new(file);
+		let lines = reader.lines();
+		let s = stream::unfold((self, lines), |(s, mut l)| async move {
+		    let _line = l.next().await;
+		    let output = s.be().await;
+		    Some((output, (s, l)))
+		});
+		Some(Box::new(s))
+	    }
+	    
+    	    _ => unimplemented!()
+    	}
+    }
 }
 
 pub enum Kind {
@@ -49,10 +68,10 @@ pub enum Kind {
 	millis: u64
     },
     Changed {
-	paths: Vec<String>
+	path: String
     },
     Queue {
-	paths: Vec<String>
+	path: String
     }
 }
 
