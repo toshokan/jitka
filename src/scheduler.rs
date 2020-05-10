@@ -2,7 +2,6 @@ use super::hook::*;
 use futures::{
     sink::SinkExt,
     stream::StreamExt,
-    stream::FuturesUnordered
 };
 
 pub struct Scheduler {
@@ -14,7 +13,7 @@ impl Scheduler {
 	Self { sink }
     }
     
-    pub async fn schedule(&mut self, mut tasks: Vec<Hook>) -> Option<()> {
+    pub async fn schedule(&mut self, tasks: Vec<Hook>) -> Option<()> {
 	let streams = {
 	    let mut streams = vec![];
 	    for task in tasks {
@@ -24,23 +23,10 @@ impl Scheduler {
 	    }
 	    streams
 	};
-	let stream = streams
-	    .into_iter();
-	// let mut stream = FuturesUnordered::new();
-	// tasks.drain(..).for_each(|t| {
-	//     stream.push(t.schedule())
-	// });
-
-	// while let Some(t) = stream.next().await {
-	//     self.sink.send(
-	// 	TaskOutput {
-	// 	    tag: t.tag.clone(),
-	// 	    separator: " <> ".to_string(),
-	// 	    body: "aha!".to_string()
-	// 	}
-	//     ).await.ok()?;
-	//     stream.push(t.schedule())
-	// }
+	let mut stream = futures::stream::select_all(streams);
+	while let Some(t) = stream.next().await {
+	    self.sink.send(t).await.ok()?
+	}
 	
 	Some(())
     }

@@ -1,8 +1,9 @@
 use std::fmt;
-use async_std::task;
+use async_std::{task, fs::File, io::BufReader};
 use std::time::Duration;
 
 use futures::stream;
+
 
 pub struct Hook {
     pub tag: String,
@@ -13,29 +14,24 @@ pub struct Hook {
 
 
 impl Hook {
-    pub async fn schedule(self) -> Self {
-	use Kind::*;
-	match &self.kind {
-	    Interval {millis} => {
-		task::sleep(Duration::from_millis(*millis)).await;
-	    },
-	    _ => ()
-	}
-	
-	self
-    }
-
     pub async fn be(&self) -> TaskOutput {
+	let body = match &self.renderer {
+	    Some(r) => {
+		let o = std::process::Command::new(r).output().unwrap().stdout;
+		String::from_utf8_lossy(&o).to_string()
+	    },
+	    _ => "".to_string()
+	};
 	TaskOutput {
-	    tag: "be".to_string(),
-	    body: "be".to_string(),
-	    separator: "<>".to_string(),
+	    tag: self.tag.clone(),
+	    body,
+	    separator: self.separator.clone()
 	}
     }
 
-    pub async fn stream(self) -> Option<Box<dyn stream::Stream<Item = TaskOutput>>> {
+    pub async fn stream(self) -> Option<super::TaskOutputStream> {
     	use Kind::*;
-    	match &self.kind {
+    	let stream = match &self.kind {
     	    Interval {millis} => {
 		let interval = Duration::from_millis(*millis);
     		let s = stream::unfold((self, interval), |(s, i)| async move {
@@ -43,23 +39,25 @@ impl Hook {
     		    let output = s.be().await;
     		    Some((output, (s, i)))
     		});
-		Some(Box::new(s))
+		futures::stream::StreamExt::boxed(s)
     	    },
-	    Queue {path} => {
+	    Queue { path } => {
 		use async_std::prelude::*;
-	    	let file = async_std::fs::File::open(path).await.ok()?;
-		let reader = async_std::io::BufReader::new(file);
-		let lines = reader.lines();
-		let s = stream::unfold((self, lines), |(s, mut l)| async move {
-		    let _line = l.next().await;
+		let path = path.clone();
+		let line = String::new();
+		let s = stream::unfold((self, path, line), |(s, p, mut l)| async move {
+		    let file = File::open(&p).await.ok()?;
+		    BufReader::new(file).read_line(&mut l).await.ok()?;
+		    eprintln!("Got line {:?}", l);
 		    let output = s.be().await;
-		    Some((output, (s, l)))
+		    Some((output, (s, p, l)))
 		});
-		Some(Box::new(s))
+		futures::stream::StreamExt::boxed(s)
 	    }
 	    
     	    _ => unimplemented!()
-    	}
+    	};
+	Some(stream)
     }
 }
 

@@ -21,9 +21,15 @@ impl Server {
 	    scheduler.schedule(vec![
 		super::hook::Hook {
 		    tag: "test".to_string(),
-		    kind: super::hook::Kind::Interval{millis: 250},
-		    renderer: None,
+		    kind: super::hook::Kind::Interval{millis: 500},
+		    renderer: Some("date".to_string()),
 		    separator: "<>".to_string()
+		},
+		super::hook::Hook {
+		    tag: "file".to_string(),
+		    kind: super::hook::Kind::Queue{path: "testfifo".to_string()},
+		    renderer: Some("hostname".to_string()),
+		    separator: "|".to_string()
 		}
 	    ]).await;
 	} // drop scheduler
